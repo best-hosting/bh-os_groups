@@ -1,0 +1,17 @@
+---
+
+_os_groups_yaml: {}
+
+_os_distrib: ''
+_os_release_ver: ''
+_os_release_name: ''
+
+_os_changed_hosts: []
+## NOTE: 'os_' prefix is assumed and hardcoded below during yaml
+## generation.
+#_os_distrib: "os_{{ ansible_distribution | lower }}"
+#
+## NOTE: '-' separator of distribution and version/release is assumed and
+## hardcoded below during yaml generation.
+#_os_release_ver: "{{ _os_distrib }}-{{ ansible_distribution_major_version }}"
+#_os_release_name: "{{ _os_distrib }}-{{ ansible_distribution_release }}"

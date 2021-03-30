@@ -1,0 +1,10 @@
+---
+
+# Directory, where to save dynamic groups and cached variables.
+cache_dir: "{{ inventory_dir + '_cache' }}"
+
+# File, where to save cached dynamic groups.
+os_groups_file: "{{ cache_dir + '/os_groups.yml' }}"
+
+# Symlink to groups cache, which is created in inventory directory.
+os_groups_link: "{{ inventory_dir + '/os_groups.yml' }}"

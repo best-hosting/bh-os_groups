@@ -1,0 +1,139 @@
+---
+
+- block:
+    - name: Set variables group keys
+      set_fact:
+        # NOTE: 'os_' prefix is assumed and hardcoded below during yaml
+        # generation.
+        _os_distrib: "os_{{ ansible_distribution | lower }}"
+
+    - name: Set variables group keys
+      set_fact:
+        # NOTE: '-' separator of distribution and version/release is assumed and
+        # hardcoded below during yaml generation.
+        _os_release_ver: "{{ _os_distrib }}-{{ ansible_distribution_major_version }}"
+        _os_release_name: "{{ _os_distrib }}-{{ ansible_distribution_release }}"
+
+- block:
+    - name: os_groups | Ensure cache directory exists
+      file:
+        path: "{{ cache_dir }}"
+        state: directory
+
+  delegate_to: localhost
+  run_once: true
+
+- block:
+    - name: os_groups | Stat group cache
+      stat:
+        path: "{{ os_groups_file }}"
+      register: _os_groups_file_stats
+
+    - name: os_groups | Load group cache
+      include_vars:
+        file: "{{ os_groups_file }}"
+        name: _os_groups_read
+      when: _os_groups_file_stats.stat.exists
+
+    - name: os_groups | Loaded group cache
+      debug:
+        var: _os_groups_read
+
+  delegate_to: localhost
+  run_once: true
+
+- block:
+    - name: os_groups | Show groups BEFORE
+      debug:
+        var: groups
+
+    - name:
+      set_fact:
+        _os_changed_hosts: >-
+          {{ _os_changed_hosts + [item] | sort | unique }}
+      when: item_os_ver_groups != [] and item_os_ver_groups != [item_cur_os_ver]
+      vars:
+        item_os_ver_groups: >-
+          {{ hostvars[item]['group_names'] | select('match', '^os_.*-[0-9]+$') | list  }}
+        item_cur_os_ver: >-
+          {{ hostvars[item]['_os_release_ver'] }}
+      loop: "{{ ansible_play_hosts_all }}"
+
+    - name: huy
+      debug:
+        msg: >-
+          {{ [item] + [item_os_ver_groups != [] and item_os_ver_groups != [item_cur_os_ver]] }}
+      when: item_os_ver_groups != [] and item_os_ver_groups != item_cur_os_ver
+      vars:
+        item_os_ver_groups: >-
+          {{ hostvars[item]['group_names'] | select('match', '^os_.*-[0-9]+$') | list  }}
+        item_cur_os_ver: >-
+          {{ hostvars[item]['_os_release_ver'] }}
+      loop: "{{ ansible_play_hosts_all }}"
+
+    - name: os_groups | Hosts, which OS has changed
+      debug:
+        var: _os_changed_hosts
+
+    - name:
+      assert:
+        that:
+          - 1 == 2
+
+  run_once: true
+
+- block:
+    - name: os_groups | Group by OS
+      group_by:
+        key: '{{ _os_distrib }}'
+
+    - name: os_groups | Group by OS major version
+      group_by:
+        key: '{{ _os_release_ver }}'
+        parents: "{{ _os_distrib }}"
+
+    - name: os_groups | Group Debian by release codename
+      group_by:
+        key: '{{ _os_release_name }}'
+        parents: "{{ _os_distrib }}"
+      when: ansible_distribution == 'Debian' and ansible_distribution_release != "NA"
+
+    - name: os_groups | Show groups AFTER
+      debug:
+        var: groups
+      run_once: true
+
+- block:
+    - name: os_groups | Prepare groups yaml
+      set_fact:
+        _os_groups_yaml: >-
+          {{ _os_groups_yaml | combine(
+                      { item_os :
+                          { 'children' : dict([item.key] | zip_longest([], fillvalue={})) }
+                      , item.key :
+                          { 'hosts'    : dict(item.value | zip_longest([], fillvalue={})) }
+                      }
+                    , recursive=True
+                    )
+          }}
+      vars:
+        item_os: >-
+          {{ item.key.partition('-') | first }}
+      when: item.key.startswith('os_') and item_os != item.key
+      loop: "{{ groups | dict2items }}"
+
+    - name: os_groups | Save groups to cache
+      copy:
+        content: "{{ _os_groups_yaml | to_yaml }}"
+        dest: "{{ os_groups_file }}"
+        backup: yes
+
+    - name: os_groups | Link groups cache to inventory
+      file:
+        src: "{{ os_groups_file }}"
+        dest: "{{ os_groups_link }}"
+        state: link
+
+  delegate_to: 'localhost'
+  run_once: true
+
