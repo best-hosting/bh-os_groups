@@ -1,13 +1,13 @@
 ---
 
 - block:
-    - name: Set variables group keys
+    - name: Set group keys in host facts
       set_fact:
         # NOTE: 'os_' prefix is assumed and hardcoded below during yaml
         # generation.
         _os_distrib: "os_{{ ansible_distribution | lower }}"
 
-    - name: Set variables group keys
+    - name: Set more group keys in host facts
       set_fact:
         # NOTE: '-' separator of distribution and version/release is assumed and
         # hardcoded below during yaml generation.
@@ -39,15 +39,9 @@
       debug:
         var: _os_groups_read
 
-  delegate_to: localhost
-  run_once: true
-
-- block:
-    - name: os_groups | Show groups BEFORE
-      debug:
-        var: groups
-
-    - name:
+    # Find hosts, which has saved OS group, but it does not match to current
+    # value.
+    - name: Search for hosts with changed OS
       set_fact:
         _os_changed_hosts: >-
           {{ _os_changed_hosts + [item] | sort | unique }}
@@ -59,30 +53,54 @@
           {{ hostvars[item]['_os_release_ver'] }}
       loop: "{{ ansible_play_hosts_all }}"
 
-    - name: huy
-      debug:
-        msg: >-
-          {{ [item] + [item_os_ver_groups != [] and item_os_ver_groups != [item_cur_os_ver]] }}
-      when: item_os_ver_groups != [] and item_os_ver_groups != item_cur_os_ver
-      vars:
-        item_os_ver_groups: >-
-          {{ hostvars[item]['group_names'] | select('match', '^os_.*-[0-9]+$') | list  }}
-        item_cur_os_ver: >-
-          {{ hostvars[item]['_os_release_ver'] }}
-      loop: "{{ ansible_play_hosts_all }}"
-
-    - name: os_groups | Hosts, which OS has changed
+    - name: os_groups | Hosts with changed OS
       debug:
         var: _os_changed_hosts
 
-    - name:
-      assert:
-        that:
-          - 1 == 2
-
+  delegate_to: localhost
   run_once: true
 
 - block:
+    # FIXME: Replace 'product(_os_changed_hosts)' in loop with
+    # 'reject('contains', _os_changed_hosts)' in ansible 2.8+ .
+    - name: Remove hosts with changed OS from cached groups yaml
+      set_fact:
+        _os_groups_yaml: >-
+          {{ _os_groups_yaml | combine(
+                  { item.0.key :
+                    { 'hosts' : dict(
+                                  item.0.value.hosts.keys()
+                                    | reject('match', item.1)
+                                    | zip_longest([], fillvalue={})
+                                )
+                    }
+                  } if item.0.value.hosts is defined
+                    else { item.0.key : item.0.value }
+              )
+          }}
+      loop: "{{ _os_groups_read | dict2items | product(_os_changed_hosts) | list }}"
+
+    - name: os_groups | Save groups to cache
+      copy:
+        content: "{{ _os_groups_yaml | to_yaml }}"
+        dest: "{{ os_groups_file }}"
+        backup: yes
+
+    - name: os_groups | Request restart, if there were hosts with changed OS
+      fail:
+        msg: |-
+          There were some hosts in the play, which OS has changed: '{{ _os_changed_hosts }}'. Cached groups file was fixed and now ansible needs to be restarted.
+
+  when: _os_changed_hosts != []
+  delegate_to: localhost
+  run_once: true
+
+- block:
+    - name: os_groups | Show groups BEFORE
+      debug:
+        var: groups
+      run_once: true
+
     - name: os_groups | Group by OS
       group_by:
         key: '{{ _os_distrib }}'

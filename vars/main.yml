@@ -1,5 +1,8 @@
 ---
 
+# Read (old) content of groups cache.
+_os_groups_read: {}
+# Generated (new) content for saving to groups cache.
 _os_groups_yaml: {}
 
 _os_distrib: ''
