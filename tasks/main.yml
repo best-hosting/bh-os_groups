@@ -39,8 +39,12 @@
       debug:
         var: _os_groups_read
 
-    # Find hosts, which has saved OS group, but it does not match to current
-    # value.
+    # NOTE: Only OS groups by OS version are checked. Though, Debian groups by
+    # release codename will also be handled correctly, if OS was changed,
+    # incorrect release codename groups only will _not_ be detected here. That
+    # means, ansible can fix /correct/ saved groups file (when group by
+    # release codename matches to group by version), but it can _not_ fix
+    # /incorrect/ one.
     - name: Search for hosts with changed OS
       set_fact:
         _os_changed_hosts: >-
@@ -61,35 +65,46 @@
   run_once: true
 
 - block:
-    # FIXME: Replace 'product(_os_changed_hosts)' in loop with
-    # 'reject('contains', _os_changed_hosts)' in ansible 2.8+ .
+    # FIXME: Replace 'product(_os_changed_hosts)' in loop and tricky
+    # 'item_hosts' with just 'reject('contains', _os_changed_hosts)' in
+    # ansible 2.8+ .
     - name: Remove hosts with changed OS from cached groups yaml
       set_fact:
         _os_groups_yaml: >-
           {{ _os_groups_yaml | combine(
                   { item.0.key :
                     { 'hosts' : dict(
-                                  item.0.value.hosts.keys()
+                                  item_hosts
                                     | reject('match', item.1)
                                     | zip_longest([], fillvalue={})
                                 )
                     }
-                  } if item.0.value.hosts is defined
+                  } if item_has_hosts
                     else { item.0.key : item.0.value }
               )
           }}
+      vars:
+        item_has_hosts: >-
+          {{ item.0.value.hosts is defined }}
+        item_hosts: >-
+          {{ _os_groups_yaml[item.0.key]['hosts'].keys()
+              if item_has_hosts and _os_groups_yaml[item.0.key] is defined
+              else
+                item.0.value.hosts.keys() if item_has_hosts
+                  else {}
+          }}
       loop: "{{ _os_groups_read | dict2items | product(_os_changed_hosts) | list }}"
 
-    - name: os_groups | Save groups to cache
+    - name: os_groups | Save fixed groups to cache
       copy:
         content: "{{ _os_groups_yaml | to_yaml }}"
         dest: "{{ os_groups_file }}"
         backup: yes
 
-    - name: os_groups | Request restart, if there were hosts with changed OS
+    - name: os_groups | Request restart, since there are hosts with changed OS version
       fail:
         msg: |-
-          There were some hosts in the play, which OS has changed: '{{ _os_changed_hosts }}'. Cached groups file was fixed and now ansible needs to be restarted.
+          There are some hosts in the play, which OS has changed: '{{ _os_changed_hosts }}'. Cached groups file was fixed and now ansible needs to be restarted.
 
   when: _os_changed_hosts != []
   delegate_to: localhost
