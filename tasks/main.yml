@@ -55,7 +55,7 @@
           {{ hostvars[item]['group_names'] | select('match', '^os_.*-[0-9]+$') | list  }}
         item_cur_os_ver: >-
           {{ hostvars[item]['_os_release_ver'] }}
-      loop: "{{ ansible_play_hosts_all }}"
+      loop: "{{ ansible_play_batch }}"
 
     - name: os_groups | Hosts with changed OS
       debug:
