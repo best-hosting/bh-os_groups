@@ -1,6 +1,19 @@
 ---
 
 - block:
+    - name: Install lsb-release, because distribution was not detected properly
+      package:
+        name: 'lsb-release'
+        state: present
+      register: lsb_release_installed
+
+    - name: Re-gather facts
+      setup:
+      when: lsb_release_installed.changed
+
+  when: ansible_distribution == "OtherLinux" and ansible_distribution_major_version == "NA"
+
+- block:
     - name: Set group keys in host facts
       set_fact:
         # NOTE: 'os_' prefix is assumed and hardcoded below during yaml
